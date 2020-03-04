@@ -30,7 +30,7 @@ steps:
       from_secret: docker_username
     password:
       from_secret: docker_password
-    dockerfile: dockerfiles/mesh/Dockerfile
+    dockerfile: dockerfiles/mesh-bootstrap/Dockerfile
 node_selector:
   drone-builds: true
 ---
@@ -74,12 +74,36 @@ steps:
       from_secret: docker_username
     password:
       from_secret: docker_password
-    dockerfile: dockerfiles/mesh/Dockerfile
+    dockerfile: dockerfiles/mesh-bootstrap/Dockerfile
 trigger:
   branch:
   - development
   event:
     include:
       - push
+node_selector:
+  drone-builds: true
+---
+kind: pipeline
+type: docker
+name: mesh-publish-release-notes
+
+steps:
+  - name: publish
+    image: plugins/github-release
+    settings:
+      api_key:
+        from_secret: github_public_repo
+      files:
+        - *
+      note: RELEASE_CHANGELOG.md
+      when:
+        event: tag
+        ref:
+          - refs/tags/v*
+trigger:
+  event:
+    include:
+      - tag
 node_selector:
   drone-builds: true

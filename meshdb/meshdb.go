@@ -9,10 +9,18 @@ import (
 
 	"github.com/0xProject/0x-mesh/constants"
 	"github.com/0xProject/0x-mesh/db"
+	"github.com/0xProject/0x-mesh/ethereum"
 	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	"github.com/0xProject/0x-mesh/zeroex"
 	"github.com/ethereum/go-ethereum/common"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	// The default miniHeaderRetentionLimit used by Mesh. This default only gets overwritten in tests.
+	defaultMiniHeaderRetentionLimit = 20
+	// The maximum MiniHeaders to query per page when deleting MiniHeaders
+	miniHeadersMaxPerPage = 1000
 )
 
 var ErrDBFilledWithPinnedOrders = errors.New("the database is full of pinned orders; no orders can be removed in order to make space")
@@ -55,10 +63,11 @@ func (m Metadata) ID() []byte {
 
 // MeshDB instantiates the DB connection and creates all the collections used by the application
 type MeshDB struct {
-	database    *db.DB
-	metadata    *MetadataCollection
-	MiniHeaders *MiniHeadersCollection
-	Orders      *OrdersCollection
+	database                 *db.DB
+	metadata                 *MetadataCollection
+	MiniHeaders              *MiniHeadersCollection
+	Orders                   *OrdersCollection
+	MiniHeaderRetentionLimit int
 }
 
 // MiniHeadersCollection represents a DB collection of mini Ethereum block headers
@@ -75,7 +84,7 @@ type OrdersCollection struct {
 	MakerAddressMakerFeeAssetAddressTokenIDIndex *db.Index
 	LastUpdatedIndex                             *db.Index
 	IsRemovedIndex                               *db.Index
-	ExpirationTimeIndex                  *db.Index
+	ExpirationTimeIndex                          *db.Index
 }
 
 // MetadataCollection represents a DB collection used to store instance metadata
@@ -106,10 +115,11 @@ func New(path string) (*MeshDB, error) {
 	}
 
 	return &MeshDB{
-		database:    database,
-		metadata:    metadata,
-		MiniHeaders: miniHeaders,
-		Orders:      orders,
+		database:                 database,
+		metadata:                 metadata,
+		MiniHeaders:              miniHeaders,
+		Orders:                   orders,
+		MiniHeaderRetentionLimit: defaultMiniHeaderRetentionLimit,
 	}, nil
 }
 
@@ -136,7 +146,13 @@ func setupOrders(database *db.DB) (*OrdersCollection, error) {
 	// here is compute time for storage space.
 	makerAddressTokenAddressTokenIDIndex := col.AddMultiIndex("makerAddressTokenAddressTokenId", func(m db.Model) [][]byte {
 		order := m.(*Order)
-		singleAssetDatas, err := parseContractAddressesAndTokenIdsFromAssetData(order.SignedOrder.MakerAssetData)
+		contractAddresses, err := ethereum.GetContractAddressesForChainID(int(order.SignedOrder.ChainID.Int64()))
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err.Error(),
+			}).Panic("Failed to retrieve contractAddresses for chainID")
+		}
+		singleAssetDatas, err := parseContractAddressesAndTokenIdsFromAssetData(order.SignedOrder.MakerAssetData, contractAddresses)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error": err.Error(),
@@ -165,7 +181,14 @@ func setupOrders(database *db.DB) (*OrdersCollection, error) {
 			}
 		}
 
-		singleAssetDatas, err := parseContractAddressesAndTokenIdsFromAssetData(order.SignedOrder.MakerFeeAssetData)
+		contractAddresses, err := ethereum.GetContractAddressesForChainID(int(order.SignedOrder.ChainID.Int64()))
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err.Error(),
+			}).Panic("Failed to retrieve contractAddresses for chainID")
+		}
+
+		singleAssetDatas, err := parseContractAddressesAndTokenIdsFromAssetData(order.SignedOrder.MakerFeeAssetData, contractAddresses)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"error": err.Error(),
@@ -211,7 +234,7 @@ func setupOrders(database *db.DB) (*OrdersCollection, error) {
 		MakerAddressAndSaltIndex:                     makerAddressAndSaltIndex,
 		LastUpdatedIndex:                             lastUpdatedIndex,
 		IsRemovedIndex:                               isRemovedIndex,
-		ExpirationTimeIndex:                  expirationTimeIndex,
+		ExpirationTimeIndex:                          expirationTimeIndex,
 	}, nil
 }
 
@@ -267,7 +290,8 @@ func (e MiniHeaderCollectionEmptyError) Error() string {
 }
 
 // FindLatestMiniHeader returns the latest MiniHeader (i.e. the one with the
-// largest block number), or nil if there are none in the database.
+// largest block number). It returns nil, MiniHeaderCollectionEmptyError if there
+// are no MiniHeaders in the database.
 func (m *MeshDB) FindLatestMiniHeader() (*miniheader.MiniHeader, error) {
 	miniHeaders := []*miniheader.MiniHeader{}
 	query := m.MiniHeaders.NewQuery(m.MiniHeaders.numberIndex.All()).Reverse().Max(1)
@@ -304,26 +328,89 @@ func (m *MeshDB) FindMiniHeaderByBlockNumber(blockNumber *big.Int) (*miniheader.
 	return miniHeaders[0], nil
 }
 
+// UpdateMiniHeaderRetentionLimit updates the MiniHeaderRetentionLimit. This is only used by tests in order
+// to set the retention limit to a smaller size, making the tests shorter in length
+func (m *MeshDB) UpdateMiniHeaderRetentionLimit(limit int) error {
+	m.MiniHeaderRetentionLimit = limit
+	return m.PruneMiniHeadersAboveRetentionLimit()
+}
+
+// PruneMiniHeadersAboveRetentionLimit prunes miniHeaders from the DB that are above the retention limit
+func (m *MeshDB) PruneMiniHeadersAboveRetentionLimit() error {
+	if totalMiniHeaders, err := m.MiniHeaders.Count(); err != nil {
+		return err
+	} else if totalMiniHeaders > m.MiniHeaderRetentionLimit {
+		miniHeadersToRemove := totalMiniHeaders - m.MiniHeaderRetentionLimit
+		log.WithFields(log.Fields{
+			"numHeadersToRemove": miniHeadersToRemove,
+			"totalHeadersStored": totalMiniHeaders,
+		}).Warn("Removing outdated block headers in database (this can take a while)")
+		latestMiniHeader, err := m.FindLatestMiniHeader()
+		if err != nil {
+			return err
+		} else if latestMiniHeader != nil {
+			minBlockNumber := big.NewInt(0).Sub(latestMiniHeader.Number, big.NewInt(int64(m.MiniHeaderRetentionLimit)-1))
+			if err := m.ClearOldMiniHeaders(minBlockNumber); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // ClearAllMiniHeaders removes all stored MiniHeaders from the database.
 func (m *MeshDB) ClearAllMiniHeaders() error {
+	return m.clearMiniHeadersWithFilter(m.MiniHeaders.numberIndex.All())
+}
+
+// ClearOldMiniHeaders removes all stored MiniHeaders with a block number less then
+// the given minBlockNumber.
+func (m *MeshDB) ClearOldMiniHeaders(minBlockNumber *big.Int) error {
+	filter := m.MiniHeaders.numberIndex.RangeFilter(
+		uint256ToConstantLengthBytes(big.NewInt(0)),
+		uint256ToConstantLengthBytes(minBlockNumber),
+	)
+	return m.clearMiniHeadersWithFilter(filter)
+}
+
+func (m *MeshDB) clearMiniHeadersWithFilter(filter *db.Filter) error {
+	for {
+		removed, err := m.clearMiniHeadersOnce(filter)
+		if err != nil {
+			return err
+		}
+		if removed == 0 {
+			break
+		}
+	}
+	return nil
+}
+
+// clearMiniHeadersOnce removes up to miniHeadersMaxPerPage MiniHeaders from the
+// database that match the given filter. It returns the number of MiniHeaders removed.
+func (m *MeshDB) clearMiniHeadersOnce(filter *db.Filter) (removed int, err error) {
 	txn := m.MiniHeaders.OpenTransaction()
 	defer func() {
 		_ = txn.Discard()
 	}()
-	var storedHeaders []*miniheader.MiniHeader
-	if err := m.MiniHeaders.FindAll(&storedHeaders); err != nil {
-		return err
+	var miniHeaders []*miniheader.MiniHeader
+	if err := m.MiniHeaders.NewQuery(filter).Max(miniHeadersMaxPerPage).Run(&miniHeaders); err != nil {
+		return 0, err
 	}
-	for _, header := range storedHeaders {
-		if err := txn.Delete(header.ID()); err != nil {
-			return err
+	log.WithFields(log.Fields{
+		"maxPerPage":     miniHeadersMaxPerPage,
+		"numberToRemove": len(miniHeaders),
+	}).Trace("Removing outdated MiniHeaders from database")
+
+	for _, miniHeader := range miniHeaders {
+		if err := txn.Delete(miniHeader.ID()); err != nil {
+			return 0, err
 		}
 	}
-
 	if err := txn.Commit(); err != nil {
-		return err
+		return 0, err
 	}
-	return nil
+	return len(miniHeaders), nil
 }
 
 // FindOrdersByMakerAddress finds all orders belonging to a particular maker address
@@ -459,7 +546,7 @@ type singleAssetData struct {
 	TokenID *big.Int
 }
 
-func parseContractAddressesAndTokenIdsFromAssetData(assetData []byte) ([]singleAssetData, error) {
+func parseContractAddressesAndTokenIdsFromAssetData(assetData []byte, contractAddresses ethereum.ContractAddresses) ([]singleAssetData, error) {
 	singleAssetDatas := []singleAssetData{}
 	assetDataDecoder := zeroex.NewAssetDataDecoder()
 
@@ -509,12 +596,29 @@ func parseContractAddressesAndTokenIdsFromAssetData(assetData []byte) ([]singleA
 			return nil, err
 		}
 		for _, assetData := range decodedAssetData.NestedAssetData {
-			as, err := parseContractAddressesAndTokenIdsFromAssetData(assetData)
+			as, err := parseContractAddressesAndTokenIdsFromAssetData(assetData, contractAddresses)
 			if err != nil {
 				return nil, err
 			}
 			singleAssetDatas = append(singleAssetDatas, as...)
 		}
+	case "ERC20Bridge":
+		var decodedAssetData zeroex.ERC20BridgeAssetData
+		err := assetDataDecoder.Decode(assetData, &decodedAssetData)
+		if err != nil {
+			return nil, err
+		}
+		tokenAddress := decodedAssetData.TokenAddress
+		// HACK(fabio): Despite Chai ERC20Bridge orders encoding the Dai address as
+		// the tokenAddress, we actually want to react to the Chai token's contract
+		// events, so we actually return it instead.
+		if decodedAssetData.BridgeAddress == contractAddresses.ChaiBridge {
+			tokenAddress = contractAddresses.ChaiToken
+		}
+		a := singleAssetData{
+			Address: tokenAddress,
+		}
+		singleAssetDatas = append(singleAssetDatas, a)
 	default:
 		return nil, fmt.Errorf("unrecognized assetData type name found: %s", assetDataName)
 	}

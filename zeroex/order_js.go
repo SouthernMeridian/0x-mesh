@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"syscall/js"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -16,6 +17,7 @@ func (o OrderEvent) JSValue() js.Value {
 		contractEventsJS[i] = contractEvent.JSValue()
 	}
 	return js.ValueOf(map[string]interface{}{
+		"timestamp":                o.Timestamp.Format(time.RFC3339),
 		"orderHash":                o.OrderHash.Hex(),
 		"signedOrder":              o.SignedOrder.JSValue(),
 		"endState":                 string(o.EndState),
@@ -25,7 +27,7 @@ func (o OrderEvent) JSValue() js.Value {
 }
 
 func (s SignedOrder) JSValue() js.Value {
-	makerAssetData := ""
+	makerAssetData := "0x"
 	if len(s.MakerAssetData) != 0 {
 		makerAssetData = fmt.Sprintf("0x%s", common.Bytes2Hex(s.MakerAssetData))
 	}
@@ -36,7 +38,7 @@ func (s SignedOrder) JSValue() js.Value {
 	if len(s.MakerFeeAssetData) != 0 {
 		makerFeeAssetData = fmt.Sprintf("0x%s", common.Bytes2Hex(s.MakerFeeAssetData))
 	}
-	takerAssetData := ""
+	takerAssetData := "0x"
 	if len(s.TakerAssetData) != 0 {
 		takerAssetData = fmt.Sprintf("0x%s", common.Bytes2Hex(s.TakerAssetData))
 	}
@@ -44,7 +46,7 @@ func (s SignedOrder) JSValue() js.Value {
 	if len(s.TakerFeeAssetData) != 0 {
 		takerFeeAssetData = fmt.Sprintf("0x%s", common.Bytes2Hex(s.TakerFeeAssetData))
 	}
-	signature := ""
+	signature := "0x"
 	if len(s.Signature) != 0 {
 		signature = fmt.Sprintf("0x%s", common.Bytes2Hex(s.Signature))
 	}
@@ -72,6 +74,7 @@ func (s SignedOrder) JSValue() js.Value {
 
 func (c ContractEvent) JSValue() js.Value {
 	m := map[string]interface{}{
+		"address":    c.Address.Hex(),
 		"blockHash":  c.BlockHash.Hex(),
 		"txHash":     c.TxHash.Hex(),
 		"txIndex":    c.TxIndex,

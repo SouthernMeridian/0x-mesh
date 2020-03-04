@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xProject/0x-mesh/common/types"
+
 	"github.com/0xProject/0x-mesh/constants"
 	"github.com/0xProject/0x-mesh/ethereum/ratelimit"
 	"github.com/0xProject/0x-mesh/rpc"
@@ -22,7 +24,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAddOrdersSuccess(t *testing.T) {
+func TestWSAddOrdersSuccess(t *testing.T) {
+	runAddOrdersSuccessTest(t, standaloneWSRPCEndpointPrefix, wsRPCPort)
+}
+
+func TestHTTPAddOrdersSuccess(t *testing.T) {
+	runAddOrdersSuccessTest(t, standaloneHTTPRPCEndpointPrefix, httpRPCPort)
+}
+
+func runAddOrdersSuccessTest(t *testing.T, rpcEndpointPrefix string, rpcPort int) {
 	teardownSubTest := setupSubTest(t)
 	defer teardownSubTest(t)
 
@@ -39,14 +49,14 @@ func TestAddOrdersSuccess(t *testing.T) {
 	count := int(atomic.AddInt32(&nodeCount, 1))
 	go func() {
 		defer wg.Done()
-		startStandaloneNode(t, ctx, count, logMessages)
+		startStandaloneNode(t, ctx, count, "", logMessages)
 	}()
 
 	// Wait until the rpc server has been started, and then create an rpc client
 	// that connects to the rpc server.
 	_, err := waitForLogSubstring(ctx, logMessages, "started RPC server")
 	require.NoError(t, err, "RPC server didn't start")
-	client, err := rpc.NewClient(standaloneRPCEndpointPrefix + strconv.Itoa(rpcPort+count))
+	client, err := rpc.NewClient(rpcEndpointPrefix + strconv.Itoa(rpcPort+count))
 	require.NoError(t, err)
 
 	// Create a new valid order.
@@ -80,11 +90,19 @@ func TestAddOrdersSuccess(t *testing.T) {
 	wg.Wait()
 }
 
+func TestWSGetOrders(t *testing.T) {
+	runGetOrdersTest(t, standaloneWSRPCEndpointPrefix, wsRPCPort)
+}
+
+func TestHTTPGetOrders(t *testing.T) {
+	runGetOrdersTest(t, standaloneHTTPRPCEndpointPrefix, httpRPCPort)
+}
+
 // TODO(jalextowle): Since the uuid creation process is inherently random, we
 //                   can't meaningfully sanity check the returnedSnapshotID in
 //                   this test. Unit testing should be implemented to verify that
 //                   this logic is correct, if necessary.
-func TestGetOrders(t *testing.T) {
+func runGetOrdersTest(t *testing.T, rpcEndpointPrefix string, rpcPort int) {
 	teardownSubTest := setupSubTest(t)
 	defer teardownSubTest(t)
 
@@ -101,13 +119,13 @@ func TestGetOrders(t *testing.T) {
 	count := int(atomic.AddInt32(&nodeCount, 1))
 	go func() {
 		defer wg.Done()
-		startStandaloneNode(t, ctx, count, logMessages)
+		startStandaloneNode(t, ctx, count, "", logMessages)
 	}()
 
 	_, err := waitForLogSubstring(ctx, logMessages, "started RPC server")
 	require.NoError(t, err, "RPC server didn't start")
 
-	client, err := rpc.NewClient(standaloneRPCEndpointPrefix + strconv.Itoa(rpcPort+count))
+	client, err := rpc.NewClient(rpcEndpointPrefix + strconv.Itoa(rpcPort+count))
 	require.NoError(t, err)
 
 	// Create 10 new valid orders.
@@ -173,7 +191,7 @@ func TestGetOrders(t *testing.T) {
 
 			// Iterate through enough pages to get all of the orders in the mesh nodes database. Compare the
 			// responses to the orders that we expect to be in the database.
-			var responseOrders []*rpc.OrderInfo
+			var responseOrders []*types.OrderInfo
 			for pageNumber := 0; pageNumber < highestPageNumber; pageNumber++ {
 				expectedTimestamp := time.Now().UTC()
 				getOrdersResponse, err := client.GetOrders(pageNumber, testCase.ordersPerPage, snapshotID)
@@ -192,7 +210,15 @@ func TestGetOrders(t *testing.T) {
 	wg.Wait()
 }
 
-func TestGetStats(t *testing.T) {
+func TestWSGetStats(t *testing.T) {
+	runGetStatsTest(t, standaloneWSRPCEndpointPrefix, wsRPCPort)
+}
+
+func TestHTTPGetStats(t *testing.T) {
+	runGetStatsTest(t, standaloneHTTPRPCEndpointPrefix, httpRPCPort)
+}
+
+func runGetStatsTest(t *testing.T, rpcEndpointPrefix string, rpcPort int) {
 	teardownSubTest := setupSubTest(t)
 	defer teardownSubTest(t)
 
@@ -209,7 +235,7 @@ func TestGetStats(t *testing.T) {
 	count := int(atomic.AddInt32(&nodeCount, 1))
 	go func() {
 		defer wg.Done()
-		startStandaloneNode(t, ctx, count, logMessages)
+		startStandaloneNode(t, ctx, count, "", logMessages)
 	}()
 
 	// Wait for the rpc server to start and get the peer ID of the node. Start the
@@ -221,7 +247,7 @@ func TestGetStats(t *testing.T) {
 	require.NoError(t, err, "RPC server didn't start")
 	err = json.Unmarshal([]byte(log), &jsonLog)
 	require.NoError(t, err)
-	client, err := rpc.NewClient(standaloneRPCEndpointPrefix + strconv.Itoa(rpcPort+count))
+	client, err := rpc.NewClient(rpcEndpointPrefix + strconv.Itoa(rpcPort+count))
 	require.NoError(t, err)
 
 	getStatsResponse, err := client.GetStats()
@@ -233,14 +259,14 @@ func TestGetStats(t *testing.T) {
 
 	// NOTE(jalextowle): Since this test uses an actual mesh node, we can't know in advance which block
 	//                   should be the latest block.
-	getStatsResponse.LatestBlock = rpc.LatestBlock{}
+	getStatsResponse.LatestBlock = types.LatestBlock{}
 
 	// Ensure that the correct response was logged by "GetStats"
-	require.Equal(t, "/0x-orders/network/1337/version/2", getStatsResponse.PubSubTopic)
+	require.Equal(t, "/0x-orders/version/3/chain/1337/schema/e30=", getStatsResponse.PubSubTopic)
 	require.Equal(t, "/0x-mesh/network/1337/version/2", getStatsResponse.Rendezvous)
 	require.Equal(t, jsonLog.PeerID, getStatsResponse.PeerID)
 	require.Equal(t, 1337, getStatsResponse.EthereumChainID)
-	require.Equal(t, rpc.LatestBlock{}, getStatsResponse.LatestBlock)
+	require.Equal(t, types.LatestBlock{}, getStatsResponse.LatestBlock)
 	require.Equal(t, 0, getStatsResponse.NumOrders)
 	require.Equal(t, 0, getStatsResponse.NumPeers)
 	require.Equal(t, constants.UnlimitedExpirationTime.String(), getStatsResponse.MaxExpirationTime)
@@ -267,13 +293,13 @@ func TestOrdersSubscription(t *testing.T) {
 	count := int(atomic.AddInt32(&nodeCount, 1))
 	go func() {
 		defer wg.Done()
-		startStandaloneNode(t, ctx, count, logMessages)
+		startStandaloneNode(t, ctx, count, "", logMessages)
 	}()
 
 	// Wait for the rpc server to start and then start the rpc client.
 	_, err := waitForLogSubstring(ctx, logMessages, "started RPC server")
 	require.NoError(t, err, "RPC server didn't start")
-	client, err := rpc.NewClient(standaloneRPCEndpointPrefix + strconv.Itoa(rpcPort+count))
+	client, err := rpc.NewClient(standaloneWSRPCEndpointPrefix + strconv.Itoa(wsRPCPort+count))
 	require.NoError(t, err)
 
 	// Subscribe to order events through the rpc client and ensure that the subscription
@@ -328,13 +354,13 @@ func TestHeartbeatSubscription(t *testing.T) {
 	count := int(atomic.AddInt32(&nodeCount, 1))
 	go func() {
 		defer wg.Done()
-		startStandaloneNode(t, ctx, count, logMessages)
+		startStandaloneNode(t, ctx, count, "", logMessages)
 	}()
 
 	// Wait for the rpc server to start and then start the rpc client
 	_, err := waitForLogSubstring(ctx, logMessages, "started RPC server")
 	require.NoError(t, err, "RPC server didn't start")
-	client, err := rpc.NewClient(standaloneRPCEndpointPrefix + strconv.Itoa(rpcPort+count))
+	client, err := rpc.NewClient(standaloneWSRPCEndpointPrefix + strconv.Itoa(wsRPCPort+count))
 	require.NoError(t, err)
 
 	// Send the "SubscribeToHeartbeat" request through the rpc client and assert

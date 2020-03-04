@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -33,7 +34,7 @@ import (
 
 const (
 	ethereumRPCRequestTimeout   = 30 * time.Second
-	blockWatcherRetentionLimit  = 20
+	miniHeaderRetentionLimit    = 2
 	blockPollingInterval        = 1000 * time.Millisecond
 	ethereumRPCMaxContentLength = 524288
 	maxEthRPCRequestsPer24HrUTC = 1000000
@@ -68,6 +69,7 @@ var serialTestsEnabled bool
 
 func init() {
 	flag.BoolVar(&serialTestsEnabled, "serial", false, "enable serial tests")
+	testing.Init()
 	flag.Parse()
 }
 
@@ -78,7 +80,11 @@ func init() {
 		panic(err)
 	}
 	rateLimiter := ratelimit.NewUnlimited()
-	ethRPCClient, err = ethrpcclient.New(constants.GanacheEndpoint, ethereumRPCRequestTimeout, rateLimiter)
+	rpcClient, err := rpc.Dial(constants.GanacheEndpoint)
+	if err != nil {
+		panic(err)
+	}
+	ethRPCClient, err = ethrpcclient.New(rpcClient, ethereumRPCRequestTimeout, rateLimiter)
 	if err != nil {
 		panic(err)
 	}
@@ -1336,6 +1342,72 @@ func TestOrderWatcherHandleOrderExpirationsUnexpired(t *testing.T) {
 	assert.Equal(t, false, orderTwo.IsRemoved)
 }
 
+func TestOrderWatcherMaintainMiniHeaderRetentionLimit(t *testing.T) {
+	if !serialTestsEnabled {
+		t.Skip("Serial tests (tests which cannot run in parallel) are disabled. You can enable them with the --serial flag")
+	}
+
+	// Set up test and orderWatcher
+	teardownSubTest := setupSubTest(t)
+	defer teardownSubTest(t)
+	meshDB, err := meshdb.New("/tmp/leveldb_testing/" + uuid.New().String())
+	require.NoError(t, err)
+	err = meshDB.UpdateMiniHeaderRetentionLimit(miniHeaderRetentionLimit)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer func() {
+		cancel()
+	}()
+	_, orderWatcher := setupOrderWatcher(ctx, t, ethRPCClient, meshDB)
+
+	latestMiniHeader, err := meshDB.FindLatestMiniHeader()
+	require.NoError(t, err)
+
+	headerOne := &miniheader.MiniHeader{
+		Number:    big.NewInt(0).Add(latestMiniHeader.Number, big.NewInt(1)),
+		Hash:      common.HexToHash("0x293b9ea024055a3e9eddbf9b9383dc7731744111894af6aa038594dc1b61f87f"),
+		Parent:    common.HexToHash("0x26b13ac89500f7fcdd141b7d1b30f3a82178431eca325d1cf10998f9d68ff5ba"),
+		Timestamp: time.Now().UTC(),
+	}
+	headerTwo := &miniheader.MiniHeader{
+		Number:    big.NewInt(0).Add(headerOne.Number, big.NewInt(1)),
+		Hash:      common.HexToHash("0x72ca9481b09b8c00b2c38575e5652f2de1077f1676c6b868cf575229fcb06a96"),
+		Parent:    common.HexToHash("0x293b9ea024055a3e9eddbf9b9383dc7731744111894af6aa038594dc1b61f87f"),
+		Timestamp: time.Now().UTC(),
+	}
+	headerThree := &miniheader.MiniHeader{
+		Number:    big.NewInt(0).Add(headerTwo.Number, big.NewInt(1)),
+		Hash:      common.HexToHash("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"),
+		Parent:    common.HexToHash("0x72ca9481b09b8c00b2c38575e5652f2de1077f1676c6b868cf575229fcb06a96"),
+		Timestamp: time.Now().UTC(),
+	}
+
+	blockEvents := []*blockwatch.Event{
+		&blockwatch.Event{
+			Type:        blockwatch.Added,
+			BlockHeader: headerOne,
+		},
+		&blockwatch.Event{
+			Type:        blockwatch.Added,
+			BlockHeader: headerTwo,
+		},
+		&blockwatch.Event{
+			Type:        blockwatch.Added,
+			BlockHeader: headerThree,
+		},
+	}
+	err = orderWatcher.handleBlockEvents(ctx, blockEvents)
+	require.NoError(t, err)
+
+	latestMiniHeader, err = meshDB.FindLatestMiniHeader()
+	require.NoError(t, err)
+	assert.Equal(t, headerThree.Hash, latestMiniHeader.Hash)
+
+	totalMiniHeaders, err := meshDB.MiniHeaders.Count()
+	require.NoError(t, err)
+	assert.Equal(t, meshDB.MiniHeaderRetentionLimit, totalMiniHeaders)
+}
+
 // Scenario: Order has become unexpired and filled in the same block events processed. We test this case using
 // `convertValidationResultsIntoOrderEvents` since we cannot properly time-travel using Ganache.
 // Source: https://github.com/trufflesuite/ganache-cli/issues/708
@@ -1443,6 +1515,51 @@ func TestConvertValidationResultsIntoOrderEventsUnexpired(t *testing.T) {
 	assert.Equal(t, false, orderTwo.IsRemoved)
 }
 
+func TestDrainAllBlockEventsChan(t *testing.T) {
+	blockEventsChan := make(chan []*blockwatch.Event, 100)
+	ts := time.Now().Add(1 * time.Hour)
+	blockEventsOne := []*blockwatch.Event{
+		&blockwatch.Event{
+			Type: blockwatch.Added,
+			BlockHeader: &miniheader.MiniHeader{
+				Parent:    common.HexToHash("0x0"),
+				Hash:      common.HexToHash("0x1"),
+				Number:    big.NewInt(1),
+				Timestamp: ts,
+			},
+		},
+	}
+	blockEventsChan <- blockEventsOne
+
+	blockEventsTwo := []*blockwatch.Event{
+		&blockwatch.Event{
+			Type: blockwatch.Added,
+			BlockHeader: &miniheader.MiniHeader{
+				Parent:    common.HexToHash("0x1"),
+				Hash:      common.HexToHash("0x2"),
+				Number:    big.NewInt(2),
+				Timestamp: ts.Add(1 * time.Second),
+			},
+		},
+	}
+	blockEventsChan <- blockEventsTwo
+
+	max := 2 // enough
+	allEvents := drainBlockEventsChan(blockEventsChan, max)
+	assert.Len(t, allEvents, 2, "Two events should be drained from the channel")
+	require.Equal(t, allEvents[0], blockEventsOne[0])
+	require.Equal(t, allEvents[1], blockEventsTwo[0])
+
+	// Test case where more than max events in channel
+	blockEventsChan <- blockEventsOne
+	blockEventsChan <- blockEventsTwo
+
+	max = 1
+	allEvents = drainBlockEventsChan(blockEventsChan, max)
+	assert.Len(t, allEvents, 1, "Only max number of events should be drained from the channel, even if more than max events are present")
+	require.Equal(t, allEvents[0], blockEventsOne[0])
+}
+
 func setupOrderWatcherScenario(ctx context.Context, t *testing.T, ethClient *ethclient.Client, meshDB *meshdb.MeshDB, signedOrder *zeroex.SignedOrder) (*blockwatch.Watcher, chan []*zeroex.OrderEvent) {
 	blockWatcher, orderWatcher := setupOrderWatcher(ctx, t, ethRPCClient, meshDB)
 
@@ -1469,7 +1586,7 @@ func setupOrderWatcher(ctx context.Context, t *testing.T, ethRPCClient ethrpccli
 	blockWatcherClient, err := blockwatch.NewRpcClient(ethRPCClient)
 	require.NoError(t, err)
 	topics := GetRelevantTopics()
-	stack := simplestack.New(blockWatcherRetentionLimit, []*miniheader.MiniHeader{})
+	stack := simplestack.New(meshDB.MiniHeaderRetentionLimit, []*miniheader.MiniHeader{})
 	blockWatcherConfig := blockwatch.Config{
 		Stack:           stack,
 		PollingInterval: blockPollingInterval,

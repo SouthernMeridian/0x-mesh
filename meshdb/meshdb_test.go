@@ -8,6 +8,7 @@ import (
 	"github.com/0xProject/0x-mesh/constants"
 	"github.com/0xProject/0x-mesh/db"
 	"github.com/0xProject/0x-mesh/ethereum"
+	"github.com/0xProject/0x-mesh/ethereum/miniheader"
 	"github.com/0xProject/0x-mesh/zeroex"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/google/uuid"
@@ -99,9 +100,12 @@ func TestOrderCRUDOperations(t *testing.T) {
 }
 
 func TestParseContractAddressesAndTokenIdsFromAssetData(t *testing.T) {
+	contractAddresses, err := ethereum.GetContractAddressesForChainID(constants.TestChainID)
+	require.NoError(t, err)
+
 	// ERC20 AssetData
 	erc20AssetData := common.Hex2Bytes("f47261b000000000000000000000000038ae374ecf4db50b0ff37125b591a04997106a32")
-	singleAssetDatas, err := parseContractAddressesAndTokenIdsFromAssetData(erc20AssetData)
+	singleAssetDatas, err := parseContractAddressesAndTokenIdsFromAssetData(erc20AssetData, contractAddresses)
 	require.NoError(t, err)
 	assert.Len(t, singleAssetDatas, 1)
 	expectedAddress := common.HexToAddress("0x38ae374ecf4db50b0ff37125b591a04997106a32")
@@ -111,7 +115,7 @@ func TestParseContractAddressesAndTokenIdsFromAssetData(t *testing.T) {
 
 	// ERC721 AssetData
 	erc721AssetData := common.Hex2Bytes("025717920000000000000000000000001dc4c1cefef38a777b15aa20260a54e584b16c480000000000000000000000000000000000000000000000000000000000000001")
-	singleAssetDatas, err = parseContractAddressesAndTokenIdsFromAssetData(erc721AssetData)
+	singleAssetDatas, err = parseContractAddressesAndTokenIdsFromAssetData(erc721AssetData, contractAddresses)
 	require.NoError(t, err)
 	assert.Equal(t, 1, len(singleAssetDatas))
 	expectedAddress = common.HexToAddress("0x1dC4c1cEFEF38a777b15aA20260a54E584b16C48")
@@ -121,7 +125,7 @@ func TestParseContractAddressesAndTokenIdsFromAssetData(t *testing.T) {
 
 	// Multi AssetData
 	multiAssetData := common.Hex2Bytes("94cfcdd7000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004600000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000024f47261b00000000000000000000000001dc4c1cefef38a777b15aa20260a54e584b16c48000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044025717920000000000000000000000001dc4c1cefef38a777b15aa20260a54e584b16c480000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000x94cfcdd7000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004600000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000024f47261b00000000000000000000000001dc4c1cefef38a777b15aa20260a54e584b16c48000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044025717920000000000000000000000001dc4c1cefef38a777b15aa20260a54e584b16c48000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000")
-	singleAssetDatas, err = parseContractAddressesAndTokenIdsFromAssetData(multiAssetData)
+	singleAssetDatas, err = parseContractAddressesAndTokenIdsFromAssetData(multiAssetData, contractAddresses)
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(singleAssetDatas))
 	expectedSingleAssetDatas := []singleAssetData{
@@ -475,4 +479,32 @@ func insertRawOrders(t *testing.T, meshDB *MeshDB, rawOrders []*zeroex.Order, is
 		require.NoError(t, meshDB.Orders.Insert(order))
 	}
 	return results
+}
+
+func TestPruneMiniHeadersAboveRetentionLimit(t *testing.T) {
+	t.Parallel()
+
+	meshDB, err := New("/tmp/meshdb_testing/" + uuid.New().String())
+	require.NoError(t, err)
+	defer meshDB.Close()
+
+	txn := meshDB.MiniHeaders.OpenTransaction()
+	defer func() {
+		_ = txn.Discard()
+	}()
+
+	miniHeadersToAdd := miniHeadersMaxPerPage*2 + defaultMiniHeaderRetentionLimit + 1
+	for i := 0; i < miniHeadersToAdd; i++ {
+		miniHeader := &miniheader.MiniHeader{
+			Hash:      common.BigToHash(big.NewInt(int64(i))),
+			Number:    big.NewInt(int64(i)),
+			Timestamp: time.Now().Add(time.Duration(i)*time.Second - 5*time.Hour),
+		}
+		require.NoError(t, txn.Insert(miniHeader))
+	}
+	require.NoError(t, txn.Commit())
+
+	require.NoError(t, meshDB.PruneMiniHeadersAboveRetentionLimit())
+	remainingMiniHeaders, err := meshDB.MiniHeaders.Count()
+	assert.Equal(t, defaultMiniHeaderRetentionLimit, remainingMiniHeaders, "wrong number of MiniHeaders remaining")
 }

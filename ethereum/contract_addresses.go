@@ -54,6 +54,8 @@ type ContractAddresses struct {
 	DevUtils            common.Address `json:"devUtils"`
 	WETH9               common.Address `json:"weth9"`
 	ZRXToken            common.Address `json:"zrxToken"`
+	ChaiBridge          common.Address `json:"chaiBridge"`
+	ChaiToken           common.Address `json:"chaiToken"`
 }
 
 // ChainIDToContractAddresses maps chainId to a mapping of contract name to Ethereum address
@@ -67,9 +69,11 @@ var ChainIDToContractAddresses = map[int]ContractAddresses{
 		ERC1155Proxy:        common.HexToAddress("0x7eefbd48fd63d441ec7435d024ec7c5131019add"),
 		Coordinator:         common.HexToAddress("0x38a795580d0f687e399913a00ddef6a17612c722"),
 		CoordinatorRegistry: common.HexToAddress("0x45797531b873fd5e519477a070a955764c1a5b07"),
-		DevUtils:            common.HexToAddress("0xccc2431a7335f21d9268ba62f0b32b0f2efc463f"),
+		DevUtils:            common.HexToAddress("0xb1a3d901bad1df7d710fc8d008db7cdd6bbbffe6"),
 		WETH9:               common.HexToAddress("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
 		ZRXToken:            common.HexToAddress("0xe41d2489571d322189246dafa5ebde1f4699f498"),
+		ChaiBridge:          common.HexToAddress("0x77c31eba23043b9a72d13470f3a3a311344d7438"),
+		ChaiToken:           common.HexToAddress("0x06af07097c9eeb7fd685c692751d5c66db49c215"),
 	},
 	// Ropsten
 	3: ContractAddresses{
@@ -79,9 +83,11 @@ var ChainIDToContractAddresses = map[int]ContractAddresses{
 		ERC1155Proxy:        common.HexToAddress("0x19bb6caa3bc34d39e5a23cedfa3e6c7e7f3c931d"),
 		Coordinator:         common.HexToAddress("0x6ff734d96104965c9c1b0108f83abc46e6e501df"),
 		CoordinatorRegistry: common.HexToAddress("0x403cc23e88c17c4652fb904784d1af640a6722d9"),
-		DevUtils:            common.HexToAddress("0xa3858baf73430c2fa2339c731e3ffb04ea5e359c"),
+		DevUtils:            common.HexToAddress("0xb1a3d901bad1df7d710fc8d008db7cdd6bbbffe6"),
 		WETH9:               common.HexToAddress("0xc778417e063141139fce010982780140aa0cd5ab"),
 		ZRXToken:            common.HexToAddress("0xff67881f8d12f372d91baae9752eb3631ff0ed00"),
+		ChaiBridge:          common.HexToAddress("0x0000000000000000000000000000000000000000"),
+		ChaiToken:           common.HexToAddress("0x0000000000000000000000000000000000000000"),
 	},
 	// Rinkeby
 	4: ContractAddresses{
@@ -91,9 +97,11 @@ var ChainIDToContractAddresses = map[int]ContractAddresses{
 		Exchange:            common.HexToAddress("0x198805e9682fceec29413059b68550f92868c129"),
 		Coordinator:         common.HexToAddress("0x70c5385ee5ee4629ef72abd169e888c8b4a12238"),
 		CoordinatorRegistry: common.HexToAddress("0x1084b6a398e47907bae43fec3ff4b677db6e4fee"),
-		DevUtils:            common.HexToAddress("0xfe3b67d48c723988c81fe918da6dd4fb91459d22"),
+		DevUtils:            common.HexToAddress("0xb1a3d901bad1df7d710fc8d008db7cdd6bbbffe6"),
 		WETH9:               common.HexToAddress("0xc778417e063141139fce010982780140aa0cd5ab"),
 		ZRXToken:            common.HexToAddress("0x8080c7e4b81ecf23aa6f877cfbfd9b0c228c6ffa"),
+		ChaiBridge:          common.HexToAddress("0x0000000000000000000000000000000000000000"),
+		ChaiToken:           common.HexToAddress("0x0000000000000000000000000000000000000000"),
 	},
 	// Kovan
 	42: ContractAddresses{
@@ -103,9 +111,11 @@ var ChainIDToContractAddresses = map[int]ContractAddresses{
 		ERC1155Proxy:        common.HexToAddress("0x64517fa2b480ba3678a2a3c0cf08ef7fd4fad36f"),
 		Coordinator:         common.HexToAddress("0xd29e59e51e8ab5f94121efaeebd935ca4214e257"),
 		CoordinatorRegistry: common.HexToAddress("0x09fb99968c016a3ff537bf58fb3d9fe55a7975d5"),
-		DevUtils:            common.HexToAddress("0x80101f90446d9e19a80109ac2767c8c957debb29"),
+		DevUtils:            common.HexToAddress("0xb1a3d901bad1df7d710fc8d008db7cdd6bbbffe6"),
 		WETH9:               common.HexToAddress("0xd0a1e359811322d97991e03f863a0c30c2cf029c"),
 		ZRXToken:            common.HexToAddress("0x2002d3812f58e35f0ea1ffbf80a75a38c32175fa"),
+		ChaiBridge:          common.HexToAddress("0x0000000000000000000000000000000000000000"),
+		ChaiToken:           common.HexToAddress("0x0000000000000000000000000000000000000000"),
 	},
 	// Ganache snapshot
 	1337: ContractAddresses{
@@ -118,5 +128,7 @@ var ChainIDToContractAddresses = map[int]ContractAddresses{
 		DevUtils:            common.HexToAddress("0xa31e64ea55b9b6bbb9d6a676738e9a5b23149f84"),
 		WETH9:               common.HexToAddress("0x0b1ba0af832d7c05fd64161e0db78e85978e8082"),
 		ZRXToken:            common.HexToAddress("0x871dd7c2b4b25e1aa18728e9d5f2af4c4e431f5c"),
+		ChaiBridge:          common.HexToAddress("0x0000000000000000000000000000000000000000"),
+		ChaiToken:           common.HexToAddress("0x0000000000000000000000000000000000000000"),
 	},
 }
