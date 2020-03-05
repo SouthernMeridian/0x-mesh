@@ -1,0 +1,49 @@
+version: '3'
+
+services:
+    mesh:
+        image: 0xorg/mesh:latest
+        restart: always
+        logging:
+            driver: fluentd
+            options:
+                fluentd-address: localhost:24224
+                tag: docker.mesh
+        volumes:
+            - /root/data:/usr/mesh/0x_mesh
+        links:
+            - fluentbit
+        ports:
+            - '60557:60557'
+            - '60558:60558'
+            - '60559:60559'
+        environment:
+            - VERBOSITY=5
+            - ETHEREUM_CHAIN_ID=1
+            - WS_RPC_ADDR=mesh:60557
+            - HTTP_RPC_ADDR=mesh:60556
+            # Set your backing Ethereum JSON RPC endpoint below
+            - ETHEREUM_RPC_URL='https://mainnet.infura.io/v3/3ae21d5233594d48b4475cfb9afb3ab7'
+            - BLOCK_POLLING_INTERVAL=5s
+
+    fluentbit:
+        image: 0xorg/mesh-fluent-bit:latest
+        links:
+            - esproxy
+        ports:
+            - '24224:24224'
+        command: /fluent-bit/bin/fluent-bit -c /fluent-bit/etc/fluent-bit.conf
+
+    esproxy:
+        image: overmorrow/auth-es-proxy:latest
+        ports:
+            - '3333:3333'
+        volumes:
+            - /root/data/keys:/app/keys
+        restart: on-failure:5
+        environment:
+            - PORT=3333
+            - REMOTE_ADDRESS=https://telemetry.mesh.0x.org/_bulk
+            - INPUT_VALIDATION=false
+            - OUTPUT_SIGNING=true
+            - PRIVATE_KEY_PATH=/app/keys/privkey
