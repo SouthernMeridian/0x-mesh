@@ -164,7 +164,7 @@
     lodash.values "^4.3.0"
 
 "@0x/mesh-browser-lite@file:packages/browser-lite":
-  version "1.0.0"
+  version "9.1.0"
   dependencies:
     "@0x/order-utils" "^10.2.0"
     "@0x/utils" "^5.4.0"
@@ -173,9 +173,9 @@
     ethereum-types "^3.0.0"
 
 "@0x/mesh-browser@file:packages/browser":
-  version "1.0.0"
+  version "9.1.0"
   dependencies:
-    "@0x/mesh-browser-lite" "file:../Library/Caches/Yarn/v6/npm-@0x-mesh-browser-1.0.0-c54ad8fb-bbd6-45d5-8686-a737dc580d67-1583272830805/node_modules/@0x/browser-lite"
+    "@0x/mesh-browser-lite" "^9.1.0"
     base64-arraybuffer "^0.2.0"
     browserfs "^1.4.3"
     ethereum-types "^3.0.0"
@@ -4487,9 +4487,9 @@ heap@0.2.6:
   integrity sha1-CH4fELBGky/IWU3Z5tN4r8nR5aw=
 
 highlight.js@^9.17.1:
-  version "9.18.1"
-  resolved "https://registry.yarnpkg.com/highlight.js/-/highlight.js-9.18.1.tgz#ed21aa001fe6252bb10a3d76d47573c6539fe13c"
-  integrity sha512-OrVKYz70LHsnCgmbXctv/bfuvntIKDz177h0Co37DQ5jamGZLVmoCVMtjMtNZY3X9DrCcKfklHPNeA0uPZhSJg==
+  version "9.18.5"
+  resolved "https://registry.yarnpkg.com/highlight.js/-/highlight.js-9.18.5.tgz#d18a359867f378c138d6819edfc2a8acd5f29825"
+  integrity sha512-a5bFyofd/BHCX52/8i8uJkjr9DYwXIPnM/plwI6W7ezItLGqzt7X2G2nXuYSfsIJdkwwj/g9DG1LkcGJI/dDoA==
 
 hmac-drbg@^1.0.0:
   version "1.0.1"
