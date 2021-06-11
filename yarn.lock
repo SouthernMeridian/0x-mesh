@@ -164,7 +164,7 @@
     lodash.values "^4.3.0"
 
 "@0x/mesh-browser-lite@file:packages/browser-lite":
-  version "1.0.0"
+  version "9.1.0"
   dependencies:
     "@0x/order-utils" "^10.2.0"
     "@0x/utils" "^5.4.0"
@@ -173,9 +173,9 @@
     ethereum-types "^3.0.0"
 
 "@0x/mesh-browser@file:packages/browser":
-  version "1.0.0"
+  version "9.1.0"
   dependencies:
-    "@0x/mesh-browser-lite" "file:../Library/Caches/Yarn/v6/npm-@0x-mesh-browser-1.0.0-c54ad8fb-bbd6-45d5-8686-a737dc580d67-1583272830805/node_modules/@0x/browser-lite"
+    "@0x/mesh-browser-lite" "^9.1.0"
     base64-arraybuffer "^0.2.0"
     browserfs "^1.4.3"
     ethereum-types "^3.0.0"
@@ -6065,9 +6065,9 @@ normalize-path@^3.0.0, normalize-path@~3.0.0:
   integrity sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==
 
 normalize-url@^4.1.0:
-  version "4.5.0"
-  resolved "https://registry.yarnpkg.com/normalize-url/-/normalize-url-4.5.0.tgz#453354087e6ca96957bd8f5baf753f5982142129"
-  integrity sha512-2s47yzUxdexf1OhyRi4Em83iQk0aPvwTddtFz4hnSSw9dCEsLEGf6SwIO8ss/19S9iBb5sJaOuTvTGDeZI00BQ==
+  version "4.5.1"
+  resolved "https://registry.yarnpkg.com/normalize-url/-/normalize-url-4.5.1.tgz#0dd90cf1288ee1d1313b87081c9a5932ee48518a"
+  integrity sha512-9UZCFRHQdNrfTpGg8+1INIg93B6zE0aXMVFkw1WFwvO4SlZywU6aLg5Of0Ap/PgcbSw4LNxvMWXMeugwMCX0AA==
 
 npm-bundled@^1.0.1:
   version "1.0.6"
